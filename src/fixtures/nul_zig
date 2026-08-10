@@ -1,0 +1,7 @@
+//! Module named after a Windows-reserved device name.
+
+/// A struct also named after a reserved device name.
+pub const Con = struct {
+    /// Does nothing.
+    pub fn noop() void {}
+};
