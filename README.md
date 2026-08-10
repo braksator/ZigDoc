@@ -231,22 +231,7 @@ the variables automatically have a newline char output after them, so
 that's why there's fewer line-breaks in the template.
 
 A variable can also carry its own `format="..."` attribute right in the
-template, e.g.:
-
-```
-{index format="<nav class=\"index\"><strong>Index</strong>{index}</nav>"}
-```
-
-When the variable's value is non-empty, the format string is used in its
-place — with the variable's own name inside the format string standing in
-for its raw value, and every other page/section variable still available
-too (e.g. `{breadcrumb format="<nav>{breadcrumb}{page-title}</nav>"}`).
-When the value is empty, the whole `{name format="..."}` outputs nothing,
-same as an empty plain `{name}` would. This is how the default templates
-supply their own wrapper markup around `index`, `breadcrumb`, `name`,
-`path`, `sig`, `file-heading`, `location`, and `code-heading` — copy a
-default template and adjust the format strings to restyle any of these
-without touching ZigDoc's source.
+template. You'll see it.
 
 This gives you control over the output order and the ability to add custom
 wrappers. If you need more than this then CSS/JS is the answer.
