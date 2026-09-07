@@ -393,7 +393,7 @@ const searchFragment =
     \\    padding: .55rem 2.2rem .55rem .9rem;
     \\    font-size: 1rem;
     \\    color: var(--zd-fg);
-    \\    background: var(--zd-bg);
+    \\    background: var(--zd-i);
     \\    border: 1px solid var(--zd-brd);
     \\    border-radius: 20px;
     \\    &:focus {
