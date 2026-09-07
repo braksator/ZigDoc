@@ -1,15 +1,17 @@
 .{
     .name = .zigdoc,
-    .version = "0.1.0",
-    .minimum_zig_version = "0.17.0-dev.0+0",
-    .fingerprint = 0x50a871f4cd7babdd,
-    .dependencies = .{},
+    .version = "0.2.0",
+    .fingerprint = 0x50a871f4d650f14a,
+    .minimum_zig_version = "0.17.0-dev.0",
+    .dependencies = .{
+        .minify_zig = .{
+            .url = "https://github.com/braksator/minify.zig/archive/refs/tags/v0.2.0.tar.gz",
+            .hash = "minify_zig-0.2.0-InknuMMyCQCv8s1Ho2rk3lv3082WlEePLQ8uRvJ0_R3z",
+        },
+    },
     .paths = .{
         "build.zig",
         "build.zig.zon",
         "src",
-        "README.md",
-        "LICENSE",
-        "THIRD_PARTY_LICENSES.md",
     },
 }

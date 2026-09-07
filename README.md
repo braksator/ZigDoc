@@ -41,6 +41,14 @@ Ready-to-go release binaries are written to `release/<platform>/` for Windows/Ma
 
 `zig build release` - The entire `release/` directory (for all platforms) will be regenerated. (`zig-out/` will get deleted too)
 
+### 🔸 Adding this package as a dependency.
+
+> **Important: This project targets Zig's `0.17-dev` branch.  It won't compile on previous versions.**
+
+`zig fetch --save https://github.com/braksator/ZigDoc/archive/refs/tags/v0.2.0.tar.gz`
+
+You'll probably want build.zig integration (described further below).
+
 ## 📚 Usage
 
 ```
@@ -61,14 +69,14 @@ These apply regardless of `--format`.  Some of these options necessarily change/
 
 - `--format` (`html`, `md`, default: `html`):
   - Output format. See the lists further down below for format-specific options.
-- `--split` (`none`, `file`, `item`, default: `none`):
-  - Output file structure. `none` - one file. `file` - one source code file is documented per page. `item` - one declaration is documented per page.
+- `--discover` (`fs`, `ns`, default: `fs`):
+  - Determines if we're documenting by *FILE SYSTEM* (`fs`) or *NAMESPACE* (`ns`).  The `ns` mode works better if you feed in one root file and it can follow the import graph to find the rest.  The `fs` mode can do a single file or a whole project directory.
+- `--split` (`none`, `file`, `ns`, `item`, default: `none`):
+  - Output file structure. `none` - one page. `file`/`ns` - split into pages for each. `item` - split into even more pages.
 - `--out` (directory path, default: `zigdoc`):
   - Output directory.  **I wouldn't output to directories that contain something already!**
 - `--clear` (`on`, `off`, default: `on`):
-  - **Deletes any md/html files from the output directory before running.** *You should probably know this is on by default*
-- `--filetypes` (comma-separated extensions, default: `zig`):
-  - By default, ZigDoc just does the `.zig` files, but you can include other files too like: `--filetypes zig,md,css,html`. It can't parse non-zig files, but it can at least include them in the listed items.
+  - **Deletes any md/html/css/js files from the output directory before running.** *You should probably know this is on by default*
 
 #### Navigation
 
@@ -76,8 +84,28 @@ These apply regardless of `--format`.  Some of these options necessarily change/
 
 - `--index` (`on`, `off`, default: `on`):
   - Outputs a "table of contents" style *Index* navigation list at the top. If you don't like it, here's how you get rid of it.
+    - > Instead of the Index use `--show all` (or similar) to actually list the child items in categories as part of the doc.
 - `--breadcrumb` (`on`, `off`, default: `on`):
   - Show breadcrumb navigation in `--split` modes. Turn it off if you want to provide your own nav or back/home link.
+
+#### Filesystem discovery options
+
+> *Only meaningful under `--discover fs` (the default).*
+
+- `--filetypes` (comma-separated extensions, default: `zig`):
+  - By default, ZigDoc just does the `.zig` files, but you can include other files too like: `--filetypes zig,md,css,html`. It can't parse non-zig files, but it can at least include them in the listed items.
+- `--ext` (`on`, `off`, default: `on`):
+  - Whether the title of "file" items displays the ".zig" extension.
+- `--exturls` (`on`, `off`, default: `on`):
+  - Whether the URL of "file" items displays the ".zig" extension. That's more correct, and consistent with how clashes in naming would be resolved.
+- `--tree` (`on`, `off`, default: `on`):
+  - Switches the *Index* navigation list between directory nesting and flat lists.
+- `--dir` (`on`, `off`, default: `on`):
+  - Can be used to remove the directory path that prefixes "file" items when `--tree` is off.
+- `--dirorder` (`first`, `last`, `alpha`, default: `first`):
+  - Where to display directories in the *Index* navigation tree.
+- `--filedir` (`on`, `off`, default: `on`):
+  - Whether the display of a file location includes the parent directory of the documented project.
 
 #### Display text
 
@@ -100,14 +128,10 @@ These apply regardless of `--format`.  Some of these options necessarily change/
 
 > *Desirable handy options for what gets displayed. Custom CSS (See **HTML Options**) and **Templating** can be used to fine-tune it further.*
 
-- `--location` (`on`, `off`, default: `on`):
-  - Show each declaration's source file path.
-- `--linenum` (`on`, `off`, default: `on`):
-  - Show each declaration's source line number.
-- `--subheadings` (`on`, `off`, default: `off`):
-  - Print "File" and "Code" subheadings.
-- `--ext` (`on`, `off`, default: `on`):
-  - Whether the title of "file" items displays the ".zig" extension.
+- `--show` (comma-separated list; default: `file,linenum`):
+  - Which categories of content render. Options are: `file`, `linenum`, `fields`, `parameters`, `errorsets`, `directories`, `files`, `namespaces`, `structs`, `types`, `values`, `functions`, `funcsigs`, or `all`; prefix an entry with `-` to exclude it from `all`. Example: `--show all,-linenum` shows everything except line numbers. (tip: `funcsigs` is a more verbose variant of `functions`)
+- `--subheadings` (`on`, `off`, default: `on`):
+  - Print additional subheadings inside declaration sections.
 
 #### URLs
 
@@ -115,44 +139,52 @@ These apply regardless of `--format`.  Some of these options necessarily change/
 
 - `--prettyurls` (`on`, `off`, default: `off`):
   - Links don't have "index.html" at the end - this ONLY works on a web server configured to handle that.
-- `--exturls` (`on`, `off`, default: `on`):
-  - Whether the URL of "file" items displays the ".zig" extension. That's more correct, and consistent with how clashes in naming would be resolved.
 - `--dirurls` (`on`, `off`, default: `on`):
-  - When enabled the URL of items is the index.html of their own directory.  It's nicer and turning it off can make things a bit sus.
+  - When enabled, the URL of items is the index.html of their own directory. It's nicer and turning it off can make things a bit sus.
 
 #### Processing
 
 > *These ones are just weird.*
 
-- `--tree` (`on`, `off`, default: `on`):
-  - Switches the *Index* navigation list between nested and flat lists.
-- `--dir` (`on`, `off`, default: `on`):
-  - Can be used to remove the directory path that prefixes "file" items when `--tree` is off.
 - `--itemorder` (`code`, `alpha`, `grouped`, default: `code`):
   - Listed items appear in the same order as in the code. Here you can change the order to be alphabetical or grouped by the kind of item it is.
-- `--dirorder` (`first`, `last`, `alpha`, default: `first`):
-  - Where to display directories in the *Index* navigation tree.
-- `--omitkind` (comma-separated: `fn`, `const`, `var`, `struct`, `enum`, `union`, `opaque`, default: none):
-  - Omits declarations of the given kind(s) from output entirely, e.g. `--omitkind const,var`.
+- `--omitdoc` (comma-separated: `functions`,`fields`, `errors`, `params`, `values`, default: none):
+  - Prevents items in these categories getting their own declaration section or page, but they can still receive minimal documentation inline under their parent using the `--show` option.
+- `--omitkind` (comma-separated: `fn`, `const`, `var`, `struct`, `enum`, `union`, `opaque`, `file`, default: none):
+  - Omits declarations of the given kinds from output entirely. Use with care.
 - `--recursive` (`on`, `off`, default: `on`):
   - Also document nested containers (a struct declared inside a struct, etc...), not just top-level declarations in each file.
+- `--private` (`on`, `off`, default: `off`):
+  - Also document non-`pub` declarations, not just the public API.
+- `--showempty` (`on`, `off`, default: `off`):
+  - Keep undocumented files/directories.
+- `--showpub` (`on`, `off`, default: `on`):
+  - Whether to show the keyword `pub` before things if it should be there.
 
 ### 🔸 HTML options
 
+- `--search` (`on`, `off`, default: `off`):
+  - Adds a search box, and drops in a couple .js files along with the output.
 - `--filename` (file name, `index.html`):
   - The output filename.  (Ignored when `--split` is used)
-- `--source` (`none`, `collapsed`, `resizable`, `inline`, default: `resizable`):
+- `--source` (`none`, `collapsed`, `resizable`, `tab`, `inline`, default: `resizable`):
   - Whether and how source code is displayed.
-- `--filesource` (`none`, `collapsed`, `resizable`, `inline`, default: `none`):
-  - Whether and how full-file source code is displayed (with the "file" items).
-- `--css` (`embed`, `external`, default: `embed`):
-  - By default, CSS is in a `<style>` tag, here you can switch to a .css file so you can change it.
+- `--pagesource` (`none`, `collapsed`, `resizable`, `tab`, `inline`, default: `none`):
+  - Whether and how the source code of a page's own main item is displayed.  The `tab` option is nice.
+- `--tests` (`none`, `collapsed`, `resizable`, `inline`, default: `none`):
+  - Whether and how a file's own `test` blocks are displayed as source text.
+- `--codelinks` (`on`, `off`, default: `on`):
+  - Puts links into signatures and source code for convenience.
+- `--css` (`embed`, `external`, default: `embed` when --split is `none` otherwise `external`):
+  - Switches between CSS being in a `<style>` tag or in a .css file. External is better for customizations.
 - `--theme` (`auto`, `light`, `dark`, default: `auto`):
   - `auto` uses the OS/browser color scheme. `light`/`dark` rigs the page to a consistent scheme.
-- `--collapse` (`dir`, `all`, `none`, default: `dir`):
+- `--collapse` (`dir`, `ns`, `top`, `all`, `none`, default: `all`):
   - Changes how collapsing works in the *Index* navigation list.
 - `--head` (raw HTML, default: ZigDoc favicon):
   - Stick something into the `<head>` tag. Setting this ditches the ZigDoc favicon.
+- `--minify` (`on`, `off`, default: `on`):
+  - Controls whether to pump web output through [minify.zig](https://github.com/braksator/minify.zig). Huge difference in output size.
 
 ### 🔸 Markdown options (`--format md`)
 
@@ -160,8 +192,10 @@ These apply regardless of `--format`.  Some of these options necessarily change/
   - The output filename.  (Ignored when `--split` is used)
 - `--source` (`none`, `inline`, default: `none`):
   - Whether and how source code is displayed.
-- `--filesource` (`none`, `inline`, default: `none`):
-  - Whether and how full-file source code is displayed (with the "file" items).
+- `--pagesource` (`none`, `inline`, default: `none`):
+  - Whether and how the source code of a page's own main item is displayed.
+- `--tests` (`none`, `inline`, default: `none`):
+  - Whether and how a file's own `test` blocks are displayed as source text.
 
 ### 🎓 Examples
 
@@ -178,7 +212,13 @@ file path. Write it to the "docs" folder, **and delete any html/md already
 in there somewhere**.
 
 ```
-zigdoc --format md --source inline --location off --out docs src/root.zig
+zigdoc --format md --source inline --show linenum --out docs src/root.zig
+```
+
+A more AutoDoc-like style showing how this [live example](https://braksator.github.io/zigdoc/split/) was configured:
+
+```
+zigdoc -- /zig/lib/std/std.zig --discover ns --split item --title "Zig 0.17.0-dev (Split by item)"  --index off --pagesource tab --show all --prettyurls on --private on --search on --desc "A description of this project/doc" --zd
 ```
 
 #### 🔸 Generating an `AI_CONTEXT.md` for LLM context
@@ -193,7 +233,10 @@ zigdoc . --format md --index off --out AI_CONTEXT.md --rootname "My App AI Conte
 #### 🔸 Build file (`build.zig`) integration
 
 ```zig
-const zigdoc_dep = b.dependency("zigdoc", .{});
+const zigdoc_dep = b.dependency("zigdoc", .{
+    .target = target,
+    .optimize = optimize,
+});
 const zigdoc_exe = zigdoc_dep.artifact("zigdoc");
 
 const docs_step = b.step("docs", "Generate documentation");
@@ -228,7 +271,8 @@ to these options.
 
 Templating language is simple, just `{variables}` - no logic. In Markdown
 the variables automatically have a newline char output after them, so
-that's why there's fewer line-breaks in the template.
+that's why there's fewer line-breaks in the template.  And you'll notice
+line-breaks have to specified with `\n` - just trust me it's better that way.
 
 A variable can also carry its own `format="..."` attribute right in the
 template. You'll see it.
@@ -237,15 +281,10 @@ This gives you control over the output order and the ability to add custom
 wrappers. If you need more than this then CSS/JS is the answer.
 
 Variable names should clue you in to what they are. Depending on the options
-that **ZigDoc** is run with: some variables will output nothing.
+that **ZigDoc** is run with, and the context of the output: some variables
+will output nothing.
 
 ## ☝️ Tips & Advice
-
-### Search
-
-No in-built search. The philosophy here is that between a browser or file
-reader's functionality, operating system capabilities, and search engines,
-a method for locating the docs can be easily arrived at.
 
 ### Output files starting with `_` (underscore)
 
@@ -255,16 +294,21 @@ to my web root solved the problem.
 
 ### Syntax highlighting
 
-This is built-in for `.zig` files and nothing else.  If you need more
+This is built-in for `.zig` code and nothing else.  If you need more
 than that you'll have to post-process or attach JS to the front end, perhaps
-with something like **highlight.js**.  Considered integrating TextMate
+with something like **highlight.js**. Considered integrating TextMate
 grammars, but that is too big of an undertaking.
+
+### Style classes
+
+Most of our CSS is nested in `.zigdoc`, and there is a front-page-only
+selector `.zd-root`.
 
 ## 💖 Show your love
 
-Add a button link to this github project:
+Add a button link to this github project in the footer by adding this flag:
 
 ```
---append "<a href=http://github.com/braksator/ZigDoc target=_blank><img height=32 src=data:image/png;base64,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 style=display:block;margin:auto;margin-top:2rem></a>"
+--zd
 ```
 

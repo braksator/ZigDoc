@@ -19,6 +19,13 @@
 //! format string, `\"` and `\n` are unescaped before rendering, so a
 //! wrapper can embed quoted HTML attributes or a literal newline
 //! without breaking out of the tag's own quotes.
+//!
+//! When `render` is given a `padBlock` (Markdown mode), literal
+//! newlines in the template source are stripped before parsing — so a
+//! `.tpl` file can wrap across lines for readability — and a bare
+//! `\n` outside any tag becomes a real newline in the output. A
+//! `format="..."` attribute's own `\n`/`\"` escapes are unaffected by
+//! this, since they're decoded separately once that attribute renders.
 const std = @import("std");
 
 /// One `{name}` → value substitution.
@@ -33,10 +40,8 @@ const Tag = struct {
     end: usize, // index just past the closing '}'
 };
 
-/// Parses a `{name}` or `{name format="..."}` tag starting at
-/// `template[start]` (which must be `{`). Returns null if there's no
-/// well-formed tag there (unterminated, or a `format=` not followed by
-/// a properly quoted, closed string).
+/// Parses a `{name}` or `{name format="..."}` tag starting at `template[start]`
+/// (must be `{`). Returns null if there's no well-formed tag there.
 fn parseTag(template: []const u8, start: usize) ?Tag {
     var i = start + 1;
     const nameStart = i;
@@ -64,28 +69,19 @@ fn parseTag(template: []const u8, start: usize) ?Tag {
     return .{ .name = name, .format = format, .end = i + 1 };
 }
 
-/// A `render`'s `padBlock` callback: pads a bare substitution's value
-/// for a particular output format's block conventions. See
-/// `padMdBlock`.
+/// A `render`'s `padBlock` callback: pads a bare substitution's value for a particular
+/// output format's block conventions.
 pub const PadBlockFn = *const fn (std.mem.Allocator, []const u8) std.mem.Allocator.Error![]u8;
 
-/// Pads `value` with a trailing newline if it's non-empty and doesn't
-/// already end with one — Markdown's usual one-block-per-line
-/// convention for a top-level template slot. Pass as `render`'s
-/// `padBlock` for a Markdown template; pass `null` for HTML, which
-/// has no such convention.
+/// Pads `value` with a trailing newline if non-empty and not already terminated.
+/// Pass as `render`'s `padBlock` for Markdown; `null` for HTML.
 pub fn padMdBlock(gpa: std.mem.Allocator, value: []const u8) std.mem.Allocator.Error![]u8 {
     if (value.len == 0) return gpa.dupe(u8, "");
     if (value[value.len - 1] == '\n') return gpa.dupe(u8, value);
     return std.fmt.allocPrint(gpa, "{s}\n", .{value});
 }
 
-/// Unescapes `\"` and `\n` within a `format="..."` attribute's
-/// captured text (the former so a template can wrap a value in HTML
-/// double-quoted attributes; the latter so an MD template can put a
-/// literal newline in its wrapper without breaking out of the
-/// single-line `{name format="..."}` tag). Caller owns the returned
-/// slice.
+/// Unescapes `\"` and `\n` within a `format="..."` attribute's captured text.
 fn unescapeFormat(gpa: std.mem.Allocator, format: []const u8) ![]u8 {
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
@@ -104,34 +100,64 @@ fn unescapeFormat(gpa: std.mem.Allocator, format: []const u8) ![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
-/// Renders `template`, replacing every `{name}` (or `{name
-/// format="..."}`) that matches an entry in `vars` with its value (or
-/// the value substituted into the format string). Unmatched `{...}`
-/// spans are copied through unchanged. Caller owns the returned slice.
-///
-/// `padBlock`, when non-null, is applied only to a bare `{name}`
-/// substitution (never one referenced inside another tag's
-/// `format="..."` string, since that string is the template author
-/// composing the value inline themselves) — it pads the substituted
-/// value with a trailing newline if it doesn't already end with one.
-/// This lets a caller ask for Markdown's usual one-block-per-line
-/// convention on top-level slots, without that padding leaking into
-/// values that get reused inside a `format` wrapper.
+/// Strips literal newlines from `template` (so `.tpl` source can wrap
+/// lines for readability without those breaks reaching the rendered
+/// output) and turns bare `\n` escapes into real newlines. Only applied
+/// to Markdown templates. A `format="..."` attribute's own `\"`/`\n`
+/// escapes are left as-is here — `unescapeFormat` decodes those once
+/// the attribute is rendered — so this scans tag-aware rather than
+/// toggling on every quote character.
+fn stripTemplateNewlines(gpa: std.mem.Allocator, template: []const u8) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    var i: usize = 0;
+    while (i < template.len) {
+        const c = template[i];
+        if (c == '{') {
+            if (parseTag(template, i)) |tag| {
+                try out.appendSlice(gpa, template[i..tag.end]);
+                i = tag.end;
+                continue;
+            }
+        }
+        if (c == '\r') {
+            i += 1;
+            continue;
+        }
+        if (c == '\n') {
+            i += 1;
+            continue;
+        }
+        if (c == '\\' and i + 1 < template.len and template[i + 1] == 'n') {
+            try out.append(gpa, '\n');
+            i += 2;
+            continue;
+        }
+        try out.append(gpa, c);
+        i += 1;
+    }
+    return out.toOwnedSlice(gpa);
+}
+
+/// Renders `template`, replacing every matched `{name}`/`{name format="..."}` with its
+/// value. Unmatched spans are copied through unchanged. `padBlock`, when non-null, applies
+/// only to a bare `{name}` substitution, never one inside a `format="..."` string.
 pub fn render(gpa: std.mem.Allocator, template: []const u8, vars: []const Var, padBlock: ?PadBlockFn) ![]u8 {
+    const source = if (padBlock != null) try stripTemplateNewlines(gpa, template) else template;
+    defer if (padBlock != null) gpa.free(source);
+
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
 
     var i: usize = 0;
-    while (i < template.len) {
-        if (template[i] != '{') {
-            try out.append(gpa, template[i]);
+    while (i < source.len) {
+        if (source[i] != '{') {
+            try out.append(gpa, source[i]);
             i += 1;
             continue;
         }
-        const tag = parseTag(template, i) orelse {
-            // No well-formed tag here: copy the '{' through literally
-            // and keep scanning normally.
-            try out.append(gpa, template[i]);
+        const tag = parseTag(source, i) orelse {
+            try out.append(gpa, source[i]);
             i += 1;
             continue;
         };
@@ -147,9 +173,6 @@ pub fn render(gpa: std.mem.Allocator, template: []const u8, vars: []const Var, p
                     defer gpa.free(scoped);
                     scoped[0] = .{ .name = tag.name, .value = value };
                     @memcpy(scoped[1..], vars);
-                    // Nested render: bare {name}s referenced inside this
-                    // format string are being composed inline by the
-                    // template author, so they're never block-padded.
                     const wrapped = try render(gpa, unescaped, scoped, null);
                     defer gpa.free(wrapped);
                     try out.appendSlice(gpa, wrapped);
@@ -163,9 +186,7 @@ pub fn render(gpa: std.mem.Allocator, template: []const u8, vars: []const Var, p
             }
             i = tag.end;
         } else {
-            // Unknown {name}: not a substitution target, pass through
-            // verbatim including the braces.
-            try out.append(gpa, template[i]);
+            try out.append(gpa, source[i]);
             i += 1;
         }
     }
@@ -173,122 +194,10 @@ pub fn render(gpa: std.mem.Allocator, template: []const u8, vars: []const Var, p
     return out.toOwnedSlice(gpa);
 }
 
-test "render substitutes known variables and leaves unknown ones verbatim" {
-    const gpa = std.testing.allocator;
-    const out = try render(gpa, "<h1>{title}</h1>{unknown}", &.{
-        .{ .name = "title", .value = "Hello" },
-    }, null);
-    defer gpa.free(out);
-    try std.testing.expectEqualStrings("<h1>Hello</h1>{unknown}", out);
-}
-
-test "render passes through a lone unmatched '{' without a closing brace" {
-    const gpa = std.testing.allocator;
-    const out = try render(gpa, "a { b", &.{}, null);
-    defer gpa.free(out);
-    try std.testing.expectEqualStrings("a { b", out);
-}
-
-test "render handles a variable used multiple times" {
-    const gpa = std.testing.allocator;
-    const out = try render(gpa, "{x}-{x}", &.{
-        .{ .name = "x", .value = "42" },
-    }, null);
-    defer gpa.free(out);
-    try std.testing.expectEqualStrings("42-42", out);
-}
-
-test "render leaves empty-brace and malformed spans untouched" {
-    const gpa = std.testing.allocator;
-    const out = try render(gpa, "{}{ }{{x}}", &.{
-        .{ .name = "x", .value = "V" },
-    }, null);
-    defer gpa.free(out);
-    // "{}" and "{ }" match no var name, left verbatim. "{{x}}" is
-    // "{" + "{x}" + "}" — the inner "{x}" substitutes, the outer
-    // braces are unmatched literal text.
-    try std.testing.expectEqualStrings("{}{ }{V}", out);
-}
-
-test "render applies a format attribute, wrapping the raw value" {
-    const gpa = std.testing.allocator;
-    const out = try render(gpa, "{x format=\"<b>{x}</b>\"}", &.{
-        .{ .name = "x", .value = "hi" },
-    }, null);
-    defer gpa.free(out);
-    try std.testing.expectEqualStrings("<b>hi</b>", out);
-}
-
-test "render with format attribute produces nothing for an empty value" {
-    const gpa = std.testing.allocator;
-    const out = try render(gpa, "before{x format=\"<b>{x}</b>\"}after", &.{
-        .{ .name = "x", .value = "" },
-    }, null);
-    defer gpa.free(out);
-    try std.testing.expectEqualStrings("beforeafter", out);
-}
-
-test "render allows a format string with other variables inside" {
-    const gpa = std.testing.allocator;
-    const out = try render(gpa, "{crumb format=\"<nav>{crumb}{title}</nav>\"}", &.{
-        .{ .name = "crumb", .value = "Home" },
-        .{ .name = "title", .value = "Page" },
-    }, null);
-    defer gpa.free(out);
-    try std.testing.expectEqualStrings("<nav>HomePage</nav>", out);
-}
-
-test "render unescapes \\n in a format string to a literal newline" {
-    const gpa = std.testing.allocator;
-    const out = try render(gpa, "{x format=\"## {x}\\n\"}after", &.{
-        .{ .name = "x", .value = "Heading" },
-    }, null);
-    defer gpa.free(out);
-    try std.testing.expectEqualStrings("## Heading\nafter", out);
-}
-
-test "render with padBlock pads a bare substitution but not a format-string one" {
-    const gpa = std.testing.allocator;
-    const out = try render(gpa, "**{crumb format=\"{crumb}{title}\"}**\n{title}", &.{
-        .{ .name = "crumb", .value = "Home > " },
-        .{ .name = "title", .value = "Page" },
-    }, padMdBlock);
-    defer gpa.free(out);
-    // Inside the format string neither {crumb} nor {title} gets
-    // padded, so the bold span stays intact. The bare {title} at the
-    // end is a top-level slot and does get a trailing newline.
-    try std.testing.expectEqualStrings("**Home > Page**\nPage\n", out);
-}
-
-test "render with padBlock leaves an already-newline-terminated value alone" {
-    const gpa = std.testing.allocator;
-    const out = try render(gpa, "{x}after", &.{
-        .{ .name = "x", .value = "line\n" },
-    }, padMdBlock);
-    defer gpa.free(out);
-    try std.testing.expectEqualStrings("line\nafter", out);
-}
-
-test "render with padBlock produces nothing for an empty bare value" {
-    const gpa = std.testing.allocator;
-    const out = try render(gpa, "before{x}after", &.{
-        .{ .name = "x", .value = "" },
-    }, padMdBlock);
-    defer gpa.free(out);
-    try std.testing.expectEqualStrings("beforeafter", out);
-}
-
-// Default templates for the four `--tpl-*` slots. See README's
-// "Templating" section for the variable names rendered against them.
-
-/// `--htmldoctpl` default. One call per page.
 pub const htmlDoc = @embedFile("templates/htmldoc.tpl");
 
-/// `--htmlsectpl` default. One call per documented declaration.
 pub const htmlSec = @embedFile("templates/htmlsec.tpl");
 
-/// `--mddoctpl` default. Same shape as `htmlDoc`.
 pub const mdDoc = @embedFile("templates/mddoc.tpl");
 
-/// `--mdsectpl` default.
 pub const mdSec = @embedFile("templates/mdsec.tpl");

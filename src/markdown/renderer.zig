@@ -1,6 +1,8 @@
 // Vendored from ziglang/zig, lib/docs/wasm/markdown/renderer.zig.
 // See THIRD_PARTY_LICENSES.md.
 
+//! Renders a `Document` to HTML or plain text.
+
 const std = @import("std");
 const Document = @import("Document.zig");
 const Node = Document.Node;

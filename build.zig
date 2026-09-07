@@ -13,6 +13,11 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const minify_mod = b.dependency("minify_zig", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("minify.zig");
+
     const exe = b.addExecutable(.{
         .name = "zigdoc",
         .root_module = b.createModule(.{
@@ -21,6 +26,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
         }),
     });
+    exe.root_module.addImport("minify.zig", minify_mod);
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
@@ -35,25 +41,25 @@ pub fn build(b: *std.Build) void {
     // `src/main.zig` imports (directly or transitively) every other
     // module under `src/`, and its own `test { refAllDecls(...) }`
     // block pulls all of their test blocks into this one target.
-    const lib_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
+    const lib_tests_mod = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
     });
+    lib_tests_mod.addImport("minify.zig", minify_mod);
+    const lib_tests = b.addTest(.{ .root_module = lib_tests_mod });
     test_step.dependOn(&b.addRunArtifact(lib_tests).step);
 
     // Integration tests, kept as their own target since they exercise
     // the split renderers' page/file-splitting logic end-to-end rather
     // than one module at a time.
-    const golden_tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/test.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
+    const golden_tests_mod = b.createModule(.{
+        .root_source_file = b.path("src/test.zig"),
+        .target = target,
+        .optimize = optimize,
     });
+    golden_tests_mod.addImport("minify.zig", minify_mod);
+    const golden_tests = b.addTest(.{ .root_module = golden_tests_mod });
     test_step.dependOn(&b.addRunArtifact(golden_tests).step);
 
     // Example integration: generate this project's own docs. `--out` is a
@@ -84,14 +90,20 @@ pub fn build(b: *std.Build) void {
     };
     for (release_targets) |query| {
         const resolved = b.resolveTargetQuery(query);
+        const release_minify_mod = b.dependency("minify_zig", .{
+            .target = resolved,
+            .optimize = .ReleaseFast,
+        }).module("minify.zig");
+        const release_mod = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = resolved,
+            .optimize = .ReleaseFast,
+            .strip = true, // no .pdb / debug symbols in the output
+        });
+        release_mod.addImport("minify.zig", release_minify_mod);
         const release_exe = b.addExecutable(.{
             .name = "zigdoc",
-            .root_module = b.createModule(.{
-                .root_source_file = b.path("src/main.zig"),
-                .target = resolved,
-                .optimize = .ReleaseFast,
-                .strip = true, // no .pdb / debug symbols in the output
-            }),
+            .root_module = release_mod,
         });
         const triple = query.zigTriple(b.allocator) catch @panic("OOM");
         // dest_dir override is relative to the *install prefix*.
