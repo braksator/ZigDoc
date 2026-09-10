@@ -2889,6 +2889,7 @@ fn writeFuncSigCompactHtml(writer: *std.Io.Writer, source: [:0]const u8, links: 
     while (true) {
         const token = tokenizer.next();
         if (token.tag == .eof) break;
+        if (token.tag == .doc_comment or token.tag == .container_doc_comment) continue;
 
         if (token.tag == .comma) {
             var lookahead = tokenizer;
@@ -2983,6 +2984,7 @@ fn compactSignaturePlain(gpa: std.mem.Allocator, source: [:0]const u8, layout: S
     while (true) {
         const token = tokenizer.next();
         if (token.tag == .eof) break;
+        if (token.tag == .doc_comment or token.tag == .container_doc_comment) continue;
 
         if (token.tag == .comma) {
             var lookahead = tokenizer;
