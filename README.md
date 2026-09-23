@@ -272,7 +272,7 @@ to these options.
 Templating language is simple, just `{variables}` - no logic. In Markdown
 the variables automatically have a newline char output after them, so
 that's why there's fewer line-breaks in the template.  And you'll notice
-line-breaks have to specified with `\n` - just trust me it's better that way.
+line-breaks have to be specified with `\n` - just trust me it's better that way.
 
 A variable can also carry its own `format="..."` attribute right in the
 template. You'll see it.
